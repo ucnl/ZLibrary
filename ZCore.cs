@@ -408,7 +408,7 @@ namespace ZLibrary
         }
 
         public bool IsRedPhoneMode { get; private set; }
-        public bool IsRoughDepth { get; private set; }
+        public bool IsRoughDepth { get; set; }
 
         double stationAdjustAngle = 0;
         public double StationAdjustAngle
@@ -476,8 +476,7 @@ namespace ZLibrary
             LocStringManager.Init("ZLibrary.Localization.LocStringResources", Assembly.GetExecutingAssembly());
 
             IsRoughDepth = false;
-            maxDistance_m = 2000;
-            IsRoughDepth = true;
+            maxDistance_m = 2000;            
             IsRedPhoneMode = isRedPhoneMode;
 
             OutPortResponderAddress = ZAddress.Responder_1;
