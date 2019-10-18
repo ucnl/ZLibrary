@@ -83,7 +83,7 @@ namespace ZLibrary
         public AgingValue<double> Depth { get; private set; }
 
         public AgingValue<double> BatVoltage { get; private set; }
-        public AgingValue<double> SNR { get; private set; }
+        public AgingValue<double> MSR { get; private set; }
         public AgingValue<double> DPL { get; private set; }
 
         public AgingValue<double> Azimuth { get; private set; }
@@ -104,7 +104,7 @@ namespace ZLibrary
         {
             get { return Latitude.IsInitializedAndNotObsolete && Longitude.IsInitializedAndNotObsolete; }
         }
-
+      
         #endregion
 
         #region Constructor
@@ -119,7 +119,7 @@ namespace ZLibrary
 
             Depth = new AgingValue<double>(5, 300, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F02} m", v));
             BatVoltage = new AgingValue<double>(5, 600, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F01} V", v));
-            SNR = new AgingValue<double>(5, 300, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F01} dB", v));
+            MSR = new AgingValue<double>(5, 300, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F01} dB", v));
             DPL = new AgingValue<double>(5, 300, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F02} Hz", v));
 
             Azimuth = new AgingValue<double>(5, 300, (v) => string.Format(CultureInfo.InvariantCulture, "{0:F01}°", v));
@@ -165,8 +165,8 @@ namespace ZLibrary
             if (BatVoltage.IsInitialized || !isRemoveEmptyEntries)
                 result.Add(ResponderDataID.BAT.ToString(), BatVoltage.ToString());
 
-            if (SNR.IsInitialized || !isRemoveEmptyEntries)
-                result.Add(ResponderDataID.SNR.ToString(), SNR.ToString());
+            if (MSR.IsInitialized || !isRemoveEmptyEntries)
+                result.Add(ResponderDataID.MSR.ToString(), MSR.ToString());
 
             if (DPL.IsInitialized || !isRemoveEmptyEntries)
                 result.Add(ResponderDataID.DPL.ToString(), DPL.ToString());
@@ -211,7 +211,7 @@ namespace ZLibrary
             result.Add(ResponderDataID.LON, Longitude);
             result.Add(ResponderDataID.DPT, Depth);
             result.Add(ResponderDataID.BAT, BatVoltage);
-            result.Add(ResponderDataID.SNR, SNR);
+            result.Add(ResponderDataID.MSR, MSR);
             result.Add(ResponderDataID.DPL, DPL);
             result.Add(ResponderDataID.AZM, Azimuth);
             result.Add(ResponderDataID.DST, Distance);
@@ -460,6 +460,9 @@ namespace ZLibrary
             }
         }
 
+        public bool IsHeadingFixed { get; set; }
+        public bool IsUseVTGAsHeadingSource { get; set; }
+
         ZAddress prevAddr = ZAddress.INVALID;
         bool isHDTPresent = false;
 
@@ -543,7 +546,7 @@ namespace ZLibrary
 
         private void ProcessResponder(ZAddress address, double rAzimuth)
         {
-            // Calculate slant range projection to the water surface
+            // Calculate slant range projection on the water surface
             if (Depth.IsInitialized && Responders[address].Depth.IsInitialized && responders[address].Distance.IsInitialized)
             {
 
@@ -651,18 +654,31 @@ namespace ZLibrary
                     cmdID = CDS_NODE_CMD_Enum.CDS_BAT_CHG_GET;
                 }
 
-                if ((cmdID == CDS_NODE_CMD_Enum.CDS_DPT_GET) &&
-                    (responders[responderAddress].Azimuth.IsInitialized) &&
-                    (responders[responderAddress].IsLocationInitializedAndNotObsolete))
+                if (cmdID == CDS_NODE_CMD_Enum.CDS_DPT_GET)                    
                 {
-                    double sp_lat_rad = Algorithms.Deg2Rad(Latitude.Value);
-                    double sp_lon_rad = Algorithms.Deg2Rad(Longitude.Value);
-                    double ep_lat_rad = Algorithms.Deg2Rad(responders[responderAddress].Latitude.Value);
-                    double ep_lon_rad = Algorithms.Deg2Rad(responders[responderAddress].Longitude.Value);
-                    double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap2PI(Algorithms.HaversineFinalBearing(sp_lat_rad, sp_lon_rad, ep_lat_rad, ep_lon_rad)));
-
-                    zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
-                    OnActionInit(string.Format("? {0} >> {1}", cmdID, responderAddress));
+                    if (responders[responderAddress].Azimuth.IsInitialized)
+                    {                       
+                        if (responders[responderAddress].IsLocationInitializedAndNotObsolete)
+                        {
+                            double sp_lat_rad = Algorithms.Deg2Rad(Latitude.Value);
+                            double sp_lon_rad = Algorithms.Deg2Rad(Longitude.Value);
+                            double ep_lat_rad = Algorithms.Deg2Rad(responders[responderAddress].Latitude.Value);
+                            double ep_lon_rad = Algorithms.Deg2Rad(responders[responderAddress].Longitude.Value);
+                            double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap2PI(Algorithms.HaversineFinalBearing(sp_lat_rad, sp_lon_rad, ep_lat_rad, ep_lon_rad)));
+                            zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
+                        }
+                        else if (IsHeadingFixed)
+                        {
+                            double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap360(responders[responderAddress].Azimuth.Value + 180.0));
+                            zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
+                        }
+                        else
+                        {
+                            zport.QueryRemote(responderAddress, cmdID);
+                        }                                        
+                        
+                        OnActionInit(string.Format("? {0} >> {1}", cmdID, responderAddress));
+                    }
                 }
                 else
                 {
@@ -1118,7 +1134,7 @@ namespace ZLibrary
                 responders[e.Address].Distance.Value = e.Distance;
 
             responders[e.Address].DPL.Value = e.Dpl;
-            responders[e.Address].SNR.Value = Math.Abs(e.SNR);
+            responders[e.Address].MSR.Value = Math.Abs(e.MSR);
 
             switch (e.CommandID)
             {
@@ -1422,9 +1438,12 @@ namespace ZLibrary
             {
                 if (e.IsValid)
                 {
+                    if (IsUseVTGAsHeadingSource)
+                        IsUseVTGAsHeadingSource = false;
+
                     Azimuth.Value = e.MagneticHeading;
                     StationUpdatedEventHandler.Rise(this, new EventArgs());
-                    HDGPortState = PortState.OK;
+                    HDGPortState = PortState.OK;                    
                 }
                 else
                 {
@@ -1439,6 +1458,10 @@ namespace ZLibrary
             {
                 if (!isHDTPresent)
                     isHDTPresent = true;
+
+                if (IsUseVTGAsHeadingSource)
+                    IsUseVTGAsHeadingSource = false;
+
                 Azimuth.Value = e.Heading;
                 StationUpdatedEventHandler.Rise(this, new EventArgs());
 
@@ -1456,6 +1479,9 @@ namespace ZLibrary
             {
                 SpeedKmh.Value = e.SpeedKmh;
                 VTGTrack.Value = e.TrackTrue;
+
+                if (IsUseVTGAsHeadingSource)
+                    Azimuth.Value = e.TrackTrue;
             }
         }
 

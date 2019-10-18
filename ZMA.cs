@@ -34,7 +34,7 @@ namespace ZLibrary
         LQR = 8,
         LAT = 9,
         LON = 10,
-        SNR = 11,
+        MSR = 11,
         DPL = 12,
         STY = 13,
         SLP = 14,

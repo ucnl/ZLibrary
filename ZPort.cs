@@ -40,7 +40,7 @@ namespace ZLibrary
 
         public double Azimuth { get; private set; }
         public double Distance { get; private set; }
-        public double SNR { get; private set; }
+        public double MSR { get; private set; }
         public double Dpl { get; private set; }
 
         public int DFlag { get; private set; }
@@ -56,7 +56,7 @@ namespace ZLibrary
             Value = value;
             Azimuth = azm;
             Distance = dst;
-            SNR = snr;
+            MSR = snr;
             Dpl = dpl;
             DFlag = dFlag;
         }
@@ -431,7 +431,7 @@ namespace ZLibrary
             double azimuth = double.NaN;
             double distance = double.NaN;
             double dataValue = double.NaN;
-            double snr = double.NaN;
+            double msr = double.NaN;
             double dpl = double.NaN;
             bool isOk = false;
 
@@ -444,7 +444,7 @@ namespace ZLibrary
                 if (parameters[4] != null)
                     distance = (double)parameters[4];
                 dataValue = (double)parameters[5];
-                snr = (double)parameters[6];
+                msr = (double)parameters[6];
                 dpl = (double)parameters[7];
 
                 isOk = true;
@@ -457,7 +457,7 @@ namespace ZLibrary
 
             if (isOk)
             {
-                RemoteResponseEventHandler.Rise(this, new RemoteResponseEventArgs(address, nodeCMD, dataValue, azimuth, distance, snr, dpl, dFlag));
+                RemoteResponseEventHandler.Rise(this, new RemoteResponseEventArgs(address, nodeCMD, dataValue, azimuth, distance, msr, dpl, dFlag));
             }
 
         }
