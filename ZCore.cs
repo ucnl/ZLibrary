@@ -669,7 +669,7 @@ namespace ZLibrary
                         }
                         else if (IsHeadingFixed)
                         {
-                            double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap360(responders[responderAddress].Azimuth.Value + 180.0));
+                            double rev_az = Algorithms.Wrap360(responders[responderAddress].Azimuth.Value + 180.0);
                             zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
                         }
                         else
