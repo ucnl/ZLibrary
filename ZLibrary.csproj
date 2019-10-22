@@ -44,6 +44,9 @@
     <Reference Include="UCNLNMEA">
       <HintPath>..\..\..\UCNLLibs\UCNLNMEA\UCNLNMEA\bin\Release\UCNLNMEA.dll</HintPath>
     </Reference>
+    <Reference Include="UCNLPhysics">
+      <HintPath>..\..\UCNLPhysics\UCNLPhysics\bin\Release\UCNLPhysics.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Localization\LocStringManager.cs" />

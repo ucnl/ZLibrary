@@ -8,6 +8,7 @@ using System.Text;
 using UCNLDrivers;
 using UCNLNav;
 using UCNLNMEA;
+using UCNLPhysics;
 using ZLibrary.Localization;
 
 namespace ZLibrary
@@ -462,6 +463,26 @@ namespace ZLibrary
 
         public bool IsHeadingFixed { get; set; }
         public bool IsUseVTGAsHeadingSource { get; set; }
+
+        bool isSoundSpeedToSet = false;
+        bool isSoundSpeedUpdated = true;
+        double speedOfSound = PHX.PHX_FWTR_SOUND_SPEED_MPS;
+        public double SpeedOfSound
+        {
+            get { return speedOfSound; }
+            set
+            {
+                if ((value >= PHX.PHX_FWTR_SOUND_SPEED_MPS_MIN) && (value <= PHX.PHX_FWTR_SOUND_SPEED_MPS_MAX))
+                {
+                    speedOfSound = value;
+                    isSoundSpeedToSet = true;
+                    isSoundSpeedUpdated = false;
+                }
+                else
+                    throw new ArgumentOutOfRangeException(string.Format("Sound speed value should be in a range {0:F00}..{1:F00} m/s",
+                        PHX.PHX_FWTR_SOUND_SPEED_MPS_MIN, PHX.PHX_FWTR_SOUND_SPEED_MPS_MAX));
+            }
+        }
 
         ZAddress prevAddr = ZAddress.INVALID;
         bool isHDTPresent = false;
@@ -1098,6 +1119,11 @@ namespace ZLibrary
                 {
                     zport.QueryLocalDataSet(LOC_DATA_ID.LOC_DATA_SALINITY, waterSalinity_PSU);
                 }
+                else if (isSoundSpeedToSet && !isSoundSpeedUpdated)
+                {
+                    zport.QueryLocalDataSet(LOC_DATA_ID.LOC_DATA_SOUNDSPEED, speedOfSound);
+                    isSoundSpeedToSet = false;
+                }
             }
 
             ZPortState = PortState.OK;
@@ -1115,6 +1141,11 @@ namespace ZLibrary
                 case LOC_DATA_ID.LOC_DATA_SALINITY:
                     {
                         isStationSalinityUpdated = true;
+                        break;
+                    }
+                case LOC_DATA_ID.LOC_DATA_SOUNDSPEED:
+                    {
+                        isSoundSpeedUpdated = (e.DataValue == speedOfSound);
                         break;
                     }
             }
