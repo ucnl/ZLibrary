@@ -484,12 +484,18 @@ namespace ZLibrary
             }
         }
 
+        public bool IsSaveAUXLog { get; set; }
+
         ZAddress prevAddr = ZAddress.INVALID;
         bool isHDTPresent = false;
 
         string action;
 
         double stationDepthAdjust = 0.0;
+
+        bool isStationRemoteQueryExSupported = true;
+
+        Dictionary<int, string> aux_names;
 
         #endregion
 
@@ -550,6 +556,14 @@ namespace ZLibrary
             nmeaListener.HDTSentenceReceived += new EventHandler<HDTMessageEventArgs>(nmeaListener_HDTReceived);
             nmeaListener.VTGSentenceReceived += new EventHandler<VTGMessageEventArgs>(nmeaListener_VTGReceived);
             nmeaListener.RMCSentenceReceived += new EventHandler<RMCMessageEventArgs>(nmeaListener_RMCReceived);
+            nmeaListener.NMEAIncomingMessageReceived += (o, e) => 
+            { 
+                if (IsSaveAUXLog) 
+                {
+                    string aux_name = portNamesDictionary.ContainsKey(e.SourceID) ? portNamesDictionary[e.SourceID] : string.Format("AUX {0}", e.SourceID.ToString());
+                    LogEventHandler.Rise(o, new LogEventArgs(LogLineType.INFO, string.Format("{0} >> {1}", aux_name, e.Message))); 
+                } 
+            };
 
             timer = new PrecisionTimer();
             timer.Mode = Mode.Periodic;
@@ -617,8 +631,11 @@ namespace ZLibrary
                                 out bLat, out bLon);
                         }
 
-                        responders[address].Latitude.Value = Algorithms.Rad2Deg(bLat);
-                        responders[address].Longitude.Value = Algorithms.Rad2Deg(bLon);
+                        bLat = Algorithms.Rad2Deg(bLat);
+                        bLon = Algorithms.Rad2Deg(bLon);
+
+                        responders[address].Latitude.Value = bLat;
+                        responders[address].Longitude.Value = bLon;
 
                         GeoLocationUpdatedEventHandler.Rise(this,
                             new GeoLocationUpdateEventArgs(address.ToString(), DateTime.Now, responders[address].Latitude.Value, responders[address].Longitude.Value, responders[address].Depth.Value));
@@ -678,28 +695,39 @@ namespace ZLibrary
                 if (cmdID == CDS_NODE_CMD_Enum.CDS_DPT_GET)                    
                 {
                     if (responders[responderAddress].Azimuth.IsInitialized)
-                    {                       
-                        if (responders[responderAddress].IsLocationInitializedAndNotObsolete)
+                    {
+                        if (isStationRemoteQueryExSupported)
                         {
-                            double sp_lat_rad = Algorithms.Deg2Rad(Latitude.Value);
-                            double sp_lon_rad = Algorithms.Deg2Rad(Longitude.Value);
-                            double ep_lat_rad = Algorithms.Deg2Rad(responders[responderAddress].Latitude.Value);
-                            double ep_lon_rad = Algorithms.Deg2Rad(responders[responderAddress].Longitude.Value);
-                            double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap2PI(Algorithms.HaversineFinalBearing(sp_lat_rad, sp_lon_rad, ep_lat_rad, ep_lon_rad)));
-                            zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
-                        }
-                        else if (IsHeadingFixed)
-                        {
-                            double rev_az = Algorithms.Wrap360(responders[responderAddress].Azimuth.Value + 180.0);
-                            zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
+                            if (responders[responderAddress].IsLocationInitializedAndNotObsolete)
+                            {
+                                double sp_lat_rad = Algorithms.Deg2Rad(Latitude.Value);
+                                double sp_lon_rad = Algorithms.Deg2Rad(Longitude.Value);
+                                double ep_lat_rad = Algorithms.Deg2Rad(responders[responderAddress].Latitude.Value);
+                                double ep_lon_rad = Algorithms.Deg2Rad(responders[responderAddress].Longitude.Value);
+                                double rev_az = Algorithms.Rad2Deg(Algorithms.Wrap2PI(Algorithms.HaversineFinalBearing(sp_lat_rad, sp_lon_rad, ep_lat_rad, ep_lon_rad)));
+                                zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
+                            }
+                            else if (IsHeadingFixed)
+                            {
+                                double rev_az = Algorithms.Wrap360(responders[responderAddress].Azimuth.Value + 180.0);
+                                zport.QueryRemoteEx(responderAddress, cmdID, rev_az);
+                            }
+                            else
+                            {
+                                zport.QueryRemote(responderAddress, cmdID);
+                            }
                         }
                         else
                         {
                             zport.QueryRemote(responderAddress, cmdID);
-                        }                                        
-                        
-                        OnActionInit(string.Format("? {0} >> {1}", cmdID, responderAddress));
+                        }                        
                     }
+                    else
+                    {
+                        zport.QueryRemote(responderAddress, cmdID);
+                    }
+
+                    OnActionInit(string.Format("? {0} >> {1}", cmdID, responderAddress));
                 }
                 else
                 {
@@ -1007,7 +1035,7 @@ namespace ZLibrary
             {               
                 auxPorts = new SerialPortsPool(auxPortsSettings);
                 portNamesDictionary = new Dictionary<int, string>();
-                foreach (var item in auxPortsSettings)
+                foreach (var item in auxPortsSettings)                
                     portNamesDictionary.Add(item.PortName.GetHashCode(), item.PortName);
 
                 auxPorts.DataReceived += (o, e) => nmeaListener.ProcessIncoming(e.PortName.GetHashCode(), Encoding.ASCII.GetString(e.Data));
@@ -1028,6 +1056,8 @@ namespace ZLibrary
                 {
                     outPort = new SerialPort(outPortSettings.PortName, (int)outPortSettings.PortBaudRate,
                     outPortSettings.PortParity, (int)outPortSettings.PortDataBits, outPortSettings.PortStopBits);
+
+                    outPort.WriteTimeout = 500;
 
                     OutPortResponderAddress = responderAddress;
                     OutPortState = PortState.USED;
@@ -1454,6 +1484,13 @@ namespace ZLibrary
             {
                 if (e.QueryID == ICs.IC_H2D_RPH_MODE_SET)
                     isStationRedPhoneModeUpdated = true;
+            }
+            else
+            {
+                if ((e.QueryID == ICs.IC_D2H_REM_REQ_EX) && (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
+                {
+                    isStationRemoteQueryExSupported = false;
+                }
             }
 
             ZPortState = PortState.OK;

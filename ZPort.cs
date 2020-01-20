@@ -336,7 +336,7 @@ namespace ZLibrary
             if (address != ZAddress.INVALID)
             {
                 var msg = NMEAParser.BuildProprietarySentence(ManufacturerCodes.ZMA, "H", new object[] { (int)address, cmd, Convert.ToInt32(rev_azimuth_to_station) });
-                TrySend(msg, ICs.IC_H2D_REM_REQ);
+                TrySend(msg, ICs.IC_D2H_REM_REQ_EX);
             }
             else
                 throw new ArgumentOutOfRangeException("address");
