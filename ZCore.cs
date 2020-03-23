@@ -1479,20 +1479,19 @@ namespace ZLibrary
         }
 
         private void port_StationACKReceived(object sender, StationACKEventArgs e)
-        {
-            if (e.Result == LocalError_Enum.LOC_ERR_NO_ERROR)
+        {            
+            if (e.QueryID == ICs.IC_H2D_RPH_MODE_SET)
             {
-                if (e.QueryID == ICs.IC_H2D_RPH_MODE_SET)
-                    isStationRedPhoneModeUpdated = true;
-            }
-            else
-            {
-                if ((e.QueryID == ICs.IC_D2H_REM_REQ_EX) && (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
+                if ((e.Result == LocalError_Enum.LOC_ERR_NO_ERROR) || (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
                 {
-                    isStationRemoteQueryExSupported = false;
+                    isStationRedPhoneModeUpdated = true;
                 }
             }
-
+            else if ((e.QueryID == ICs.IC_D2H_REM_REQ_EX) && (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
+            {
+                isStationRemoteQueryExSupported = false;
+            }
+            
             ZPortState = PortState.OK;
         }
 
