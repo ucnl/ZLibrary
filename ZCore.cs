@@ -77,7 +77,6 @@ namespace ZLibrary
         #region Properties
 
         public ZAddress ID { get; private set; }
-        public bool IsRedPhone { get; private set; }
 
         public AgingValue<double> Latitude { get; private set; }
         public AgingValue<double> Longitude { get; private set; }
@@ -110,10 +109,9 @@ namespace ZLibrary
 
         #region Constructor
 
-        public ZResponder(ZAddress id, bool isRedPhone)
+        public ZResponder(ZAddress id)
         {
             ID = id;
-            IsRedPhone = isRedPhone;
 
             Latitude = new AgingValue<double>(5, 300, (v) => v.ToString("F06", CultureInfo.InvariantCulture));
             Longitude = new AgingValue<double>(5, 300, (v) => v.ToString("F06", CultureInfo.InvariantCulture));
@@ -144,10 +142,7 @@ namespace ZLibrary
 
         public override string ToString()
         {
-            if (IsRedPhone)
-                return string.Format("DIVER #{0}", (int)ID);
-            else
-                return string.Format("RESPONDER #{0}", (int)ID);
+            return string.Format("RESPONDER #{0}", (int)ID);
         }
 
         public Dictionary<string, string> ToStrings(bool isRemoveEmptyEntries)
@@ -345,14 +340,11 @@ namespace ZLibrary
             set
             {
                 if (zport.IsOpen)
-                    if (!IsRedPhoneMode)
-                    {
-                        isAutoQuery = value;
-                        if (isAutoQuery && !zport.IsBusy)
-                            zport_IsBusyStateChanged(zport, new EventArgs());
-                    }
-                    else
-                        throw new InvalidOperationException(LocStringManager.AutoqueryIsNotAvailableInRedPhoneMode_str);
+                {
+                    isAutoQuery = value;
+                    if (isAutoQuery && !zport.IsBusy)
+                        zport_IsBusyStateChanged(zport, new EventArgs());
+                }
                 else
                     throw new InvalidOperationException(LocStringManager.ZCoreShouldBeStartedFirst_str);
             }
@@ -373,7 +365,6 @@ namespace ZLibrary
         }
 
         bool isStationSalinityUpdated = false;
-        bool isStationRedPhoneModeUpdated = false;
         bool isStationMaxDistanceUpdated = false;
 
         double maxDistance_m;
@@ -408,7 +399,6 @@ namespace ZLibrary
             }
         }
 
-        public bool IsRedPhoneMode { get; private set; }
         public bool IsRoughDepth { get; set; }
 
         double stationAdjustAngle = 0;
@@ -501,13 +491,12 @@ namespace ZLibrary
 
         #region Constructor
 
-        public ZCore(SerialPortSettings zPortSettings, bool isRedPhoneMode)
+        public ZCore(SerialPortSettings zPortSettings)
         {
             LocStringManager.Init("ZLibrary.Localization.LocStringResources", Assembly.GetExecutingAssembly());
 
             IsRoughDepth = false;
             maxDistance_m = 2000;            
-            IsRedPhoneMode = isRedPhoneMode;
 
             OutPortResponderAddress = ZAddress.Responder_1;
 
@@ -868,7 +857,6 @@ namespace ZLibrary
             {
                 isStationDeviceInfoUpdated = false;
                 isStationSalinityUpdated = false;
-                isStationRedPhoneModeUpdated = false;
                 zport.Open();
                 ZPortState = PortState.OPEN;
 
@@ -1026,7 +1014,7 @@ namespace ZLibrary
 
         public void AddResponder(ZAddress address)
         {
-            responders.Add(address, new ZResponder(address, IsRedPhoneMode));
+            responders.Add(address, new ZResponder(address));
         }
 
         public void AUXSourcesInit(SerialPortSettings[] auxPortsSettings)
@@ -1140,11 +1128,7 @@ namespace ZLibrary
                 else if (!isStationMaxDistanceUpdated)
                 {
                     zport.QueryLocalDataSet(LOC_DATA_ID.LOC_DATA_MAX_DIST, maxDistance_m);
-                }
-                else if (!isStationRedPhoneModeUpdated)
-                {
-                    zport.QueryLocRPhoneModeSet(IsRedPhoneMode);
-                }
+                }                
                 else if (!isStationSalinityUpdated)
                 {
                     zport.QueryLocalDataSet(LOC_DATA_ID.LOC_DATA_SALINITY, waterSalinity_PSU);
@@ -1187,7 +1171,7 @@ namespace ZLibrary
         private void zport_RemoteResponseReceived(object sender, RemoteResponseEventArgs e)
         {
             if (!responders.ContainsKey(e.Address))
-                responders.Add(e.Address, new ZResponder(e.Address, IsRedPhoneMode));
+                responders.Add(e.Address, new ZResponder(e.Address));
 
             responders[e.Address].IsTimeout.Value = false;
 
@@ -1433,7 +1417,7 @@ namespace ZLibrary
         private void zport_RemoteTimeout(object sender, RemoteTimeoutEventArgs e)
         {
             if (!responders.ContainsKey(e.Address))
-                responders.Add(e.Address, new ZResponder(e.Address, IsRedPhoneMode));
+                responders.Add(e.Address, new ZResponder(e.Address));
 
             responders[e.Address].IsTimeout.Value = true;
 
@@ -1480,14 +1464,7 @@ namespace ZLibrary
 
         private void port_StationACKReceived(object sender, StationACKEventArgs e)
         {            
-            if (e.QueryID == ICs.IC_H2D_RPH_MODE_SET)
-            {
-                if ((e.Result == LocalError_Enum.LOC_ERR_NO_ERROR) || (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
-                {
-                    isStationRedPhoneModeUpdated = true;
-                }
-            }
-            else if ((e.QueryID == ICs.IC_D2H_REM_REQ_EX) && (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
+            if ((e.QueryID == ICs.IC_D2H_REM_REQ_EX) && (e.Result == LocalError_Enum.LOC_ERR_UNSUPPORTED))
             {
                 isStationRemoteQueryExSupported = false;
             }

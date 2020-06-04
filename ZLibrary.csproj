@@ -36,15 +36,18 @@
     <Reference Include="System.Xml" />
     <Reference Include="UCNLDrivers, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\UCNLDrivers\UCNLDrivers\bin\Release\UCNLDrivers.dll</HintPath>
+      <HintPath>..\..\UCNLDrivers\UCNLDrivers\bin\Release\UCNLDrivers.dll</HintPath>
     </Reference>
-    <Reference Include="UCNLNav">
-      <HintPath>..\UCNLNav\UCNLNav\bin\Release\UCNLNav.dll</HintPath>
+    <Reference Include="UCNLNav, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\UCNLNav\UCNLNav\bin\Release\UCNLNav.dll</HintPath>
     </Reference>
-    <Reference Include="UCNLNMEA">
-      <HintPath>..\..\..\UCNLLibs\UCNLNMEA\UCNLNMEA\bin\Release\UCNLNMEA.dll</HintPath>
+    <Reference Include="UCNLNMEA, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\UCNLNMEA\UCNLNMEA\bin\Release\UCNLNMEA.dll</HintPath>
     </Reference>
-    <Reference Include="UCNLPhysics">
+    <Reference Include="UCNLPhysics, Version=1.0.7376.24686, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\UCNLPhysics\UCNLPhysics\bin\Release\UCNLPhysics.dll</HintPath>
     </Reference>
   </ItemGroup>
