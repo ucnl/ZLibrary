@@ -11,7 +11,6 @@ namespace ZLibrary.Localization
 
         #region public
 
-        public static string AutoqueryIsNotAvailableInRedPhoneMode_str; // Autoquery is not avaiable in RedPhoneMode
         public static string ZCoreShouldBeStartedFirst_str; // ZCore should be started first
 
         public static string UnableToProcessRequestInCurrentPortState_str; // Unable to procees request in current port state             
@@ -33,7 +32,6 @@ namespace ZLibrary.Localization
             {
                 ResourceManager locRM = new ResourceManager(baseName, assembly);
 
-                AutoqueryIsNotAvailableInRedPhoneMode_str = locRM.GetString("_AutoqueryIsNotAvailableInRedPhoneMode"); // Autoquery is not avaiable in RedPhoneMode
                 ZCoreShouldBeStartedFirst_str = locRM.GetString("_ZCoreShouldBeStartedFirst");
 
                 UnableToProcessRequestInCurrentPortState_str = locRM.GetString("_UnableToProcessRequestInCurrentPortState"); // Unable to procees request in current port state             
