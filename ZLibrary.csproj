@@ -58,6 +58,7 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>LocStringResources.resx</DependentUpon>
     </Compile>
+    <Compile Include="DHFilter.cs" />
     <Compile Include="ZCore.cs" />
     <Compile Include="ZMA.cs" />
     <Compile Include="ZPort.cs" />

@@ -120,7 +120,6 @@ namespace ZLibrary
             get { return port.IsOpen; }
         }
 
-
         public bool IsDeviceInfoUpdated { get; private set; }
 
         public string SystemMoniker { get; private set; }

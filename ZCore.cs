@@ -5,6 +5,7 @@ using System.IO.Ports;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using UCNLDrivers;
 using UCNLNav;
 using UCNLNMEA;
@@ -67,6 +68,38 @@ namespace ZLibrary
             Latitude = lat;
             Longitude = lon;
             Depth = dpt;
+        }
+
+        #endregion
+    }
+
+    public class AngularCalibrationResultEventArgs : EventArgs
+    {
+        #region Properties
+
+        public double USBLAzimuth { get; private set; }
+        public double GNSSAzimuth { get; private set; }
+
+        public GeoPoint USBLCentroid { get; private set; }
+        public GeoPoint GNSSCentroid { get; private set; }        
+
+        public double USBLDMRS { get; private set; }
+        public double GNSSDRMS { get; private set; }
+
+        #endregion
+
+        #region Constructor
+
+        public AngularCalibrationResultEventArgs(double usblAzimuth, double gnssAzimuth,
+            GeoPoint usblCentroid, GeoPoint gnssCentroid,
+            double usbl2DRMS, double gnss2DRMS)
+        {
+            USBLAzimuth = usblAzimuth;
+            GNSSAzimuth = gnssAzimuth;
+            USBLCentroid = usblCentroid;
+            GNSSCentroid = gnssCentroid;
+            USBLDMRS = usbl2DRMS;
+            GNSSDRMS = gnss2DRMS;
         }
 
         #endregion
@@ -230,6 +263,10 @@ namespace ZLibrary
     {
         #region Properties
 
+        char[] emu_separator = new char[] { ' ' };
+        char[] funcTrim = new char[] { '(', ')' };
+
+        bool outPortPendingClose = false;
         SerialPort outPort;
         SerialPortsPool auxPorts;
         ZPort zport;
@@ -238,6 +275,8 @@ namespace ZLibrary
         PrecisionTimer timer;
 
         Dictionary<int, string> portNamesDictionary;
+        Dictionary<int, string> portFunctionsDictionary;
+        Dictionary<string, int> portHashByFunction;
 
         bool disposed = false;
 
@@ -333,6 +372,20 @@ namespace ZLibrary
             }
         }
 
+        PortState calPortState = PortState.NOTUSED;
+        public PortState CalPortState
+        {
+            get { return calPortState; }
+            private set
+            {
+                if (value != calPortState)
+                {
+                    calPortState = value;
+                    CalPortStateChangedEventHandler.Rise(this, new EventArgs());
+                }
+            }
+        }
+
         bool isAutoQuery = false;
         public bool IsAutoQuery
         {
@@ -349,6 +402,19 @@ namespace ZLibrary
                     throw new InvalidOperationException(LocStringManager.ZCoreShouldBeStartedFirst_str);
             }
         }
+
+        bool isAngularCalPortUsed = false;
+        bool isAngularCalibration = false;
+        public bool IsAngularCalibration
+        {
+            get { return isAngularCalibration; }
+        }
+
+        ZAddress calBeaconAddress = ZAddress.INVALID;
+
+        List<GeoPoint> calPointsGNSS;
+        List<GeoPoint> calPointsUSBL;        
+        int calMaxUSBLPoints = 128;
 
         bool isStationDeviceInfoUpdated = false;
         public bool IsStationDeviceInfoUpdated
@@ -480,12 +546,10 @@ namespace ZLibrary
         bool isHDTPresent = false;
 
         string action;
-
         double stationDepthAdjust = 0.0;
-
         bool isStationRemoteQueryExSupported = true;
 
-        Dictionary<int, string> aux_names;
+        DHFilter dhFilter = new DHFilter(8, 1, 2);
 
         #endregion
 
@@ -496,7 +560,16 @@ namespace ZLibrary
             LocStringManager.Init("ZLibrary.Localization.LocStringResources", Assembly.GetExecutingAssembly());
 
             IsRoughDepth = false;
-            maxDistance_m = 2000;            
+            maxDistance_m = 2000;
+
+            portNamesDictionary = new Dictionary<int, string>();
+            portFunctionsDictionary = new Dictionary<int, string>();
+            portHashByFunction = new Dictionary<string, int>();
+
+            PortsDictionaryAdd("#EZMA", "ZMA");
+            PortsDictionaryAdd("#EAUX", "AUX");
+            PortsDictionaryAdd("#EOUT", "OUT");
+            PortsDictionaryAdd("#ECAL", "CAL");
 
             OutPortResponderAddress = ZAddress.Responder_1;
 
@@ -550,7 +623,8 @@ namespace ZLibrary
                 if (IsSaveAUXLog) 
                 {
                     string aux_name = portNamesDictionary.ContainsKey(e.SourceID) ? portNamesDictionary[e.SourceID] : string.Format("AUX {0}", e.SourceID.ToString());
-                    LogEventHandler.Rise(o, new LogEventArgs(LogLineType.INFO, string.Format("{0} >> {1}", aux_name, e.Message))); 
+                    string aux_fn = portFunctionsDictionary.ContainsKey(e.SourceID) ? string.Format("({0}", portFunctionsDictionary[e.SourceID]) : string.Empty;
+                    LogEventHandler.Rise(o, new LogEventArgs(LogLineType.INFO, string.Format("{0}{1} >> {2}", aux_name, aux_fn, e.Message))); 
                 } 
             };
 
@@ -568,6 +642,15 @@ namespace ZLibrary
 
         #region Private
 
+        private void PortsDictionaryAdd(string portName, string functionDesription)
+        {
+            int hashCode = portName.GetHashCode();
+            portNamesDictionary.Add(hashCode, portName);
+            portFunctionsDictionary.Add(hashCode, functionDesription);
+            if (!portHashByFunction.ContainsKey(functionDesription))
+                portHashByFunction.Add(functionDesription, hashCode);
+        }
+        
         private void ProcessResponder(ZAddress address, double rAzimuth)
         {
             // Calculate slant range projection on the water surface
@@ -622,17 +705,32 @@ namespace ZLibrary
 
                         bLat = Algorithms.Rad2Deg(bLat);
                         bLon = Algorithms.Rad2Deg(bLon);
+                        
+                        double dhLat = bLat;
+                        double dhLon = bLon;
+                        double dhDpt = responders[address].Depth.Value;
+                        DateTime dhTS = DateTime.Now;
 
-                        responders[address].Latitude.Value = bLat;
-                        responders[address].Longitude.Value = bLon;
-
-                        GeoLocationUpdatedEventHandler.Rise(this,
-                            new GeoLocationUpdateEventArgs(address.ToString(), DateTime.Now, responders[address].Latitude.Value, responders[address].Longitude.Value, responders[address].Depth.Value));
-
-                        if (isOutPortUsed && (OutPortResponderAddress == address) &&
-                            ((OutPortState == PortState.OPEN) || (OutPortState == PortState.OK)))
+                        if (dhFilter.Process(dhLat, dhLon, dhDpt, dhTS, out dhLat, out dhLon, out dhDpt, out dhTS))
                         {
-                            WriteOutData(bLat, bLon, responders[address].Depth.Value, responders[address].Azimuth.Value);
+                            responders[address].Latitude.Value = dhLat;
+                            responders[address].Longitude.Value = dhLon;
+
+                            GeoLocationUpdatedEventHandler.Rise(this,
+                                new GeoLocationUpdateEventArgs(address.ToString(),
+                                    DateTime.Now, responders[address].Latitude.Value, responders[address].Longitude.Value, responders[address].Depth.Value));
+
+                            if (isAngularCalibration)
+                            {
+                                calPointsUSBL.Add(new GeoPoint(dhLat, dhLon));
+                                CalPointsUpdate();
+                            }
+
+                            if (isOutPortUsed && (OutPortResponderAddress == address) &&
+                                ((OutPortState == PortState.OPEN) || (OutPortState == PortState.OK)))
+                            {
+                                WriteOutData(dhLat, dhLon, responders[address].Depth.Value, responders[address].Azimuth.Value);
+                            }
                         }
                     }
                     else
@@ -738,7 +836,10 @@ namespace ZLibrary
         }
 
         private void WriteOutData(double bLat, double bLon, double bDpt, double bAzm)
-        {            
+        {
+            if (outPortPendingClose)
+                return;
+
             string latCardinal, lonCardinal;
 
             if (bLat > 0) latCardinal = "North";
@@ -824,14 +925,18 @@ namespace ZLibrary
         {
             ZAddress result = ZAddress.INVALID;
 
-            //if (responders.ContainsKey(address))
+            if (isAngularCalibration)
+                return calBeaconAddress;
+            else
             {
-                var keys = responders.Keys.ToList();
-                var nIdx = (keys.IndexOf(address) + 1) % keys.Count;
-                result = keys[nIdx];
-            }
+                {
+                    var keys = responders.Keys.ToList();
+                    var nIdx = (keys.IndexOf(address) + 1) % keys.Count;
+                    result = keys[nIdx];
+                }
 
-            return result;
+                return result;
+            }
         }
 
         private void OnActionInit(string actionDescription)
@@ -843,6 +948,49 @@ namespace ZLibrary
         private void OnActionResult(string resultDescription)
         {
             RemoteActionProgessEventHandler.Rise(this, new StringEventArgs(string.Format("{0} -> {1}", action, resultDescription)));
+        }
+
+        private void CalPointsUpdate()
+        {
+            if ((calPointsGNSS.Count >= calMaxUSBLPoints) &&
+                (calPointsUSBL.Count >= calMaxUSBLPoints))
+            {
+                var calPointsUSBLCentroid = Navigation.GetPointsCentroid2D(calPointsUSBL);
+                var calPointsGNSSCentroid = Navigation.GetPointsCentroid2D(calPointsGNSS);
+
+                var calMPointsUSBL = Navigation.GCSToLCS(calPointsUSBL, Algorithms.WGS84Ellipsoid);
+                var calMPointsGNSS = Navigation.GCSToLCS(calPointsGNSS, Algorithms.WGS84Ellipsoid);
+
+                double usblSigmax = 0, usblSigmay = 0;
+                double gnssSigmax = 0, gnssSigmay = 0;
+
+                Navigation.GetPointsSTD2D(calMPointsUSBL, out usblSigmax, out usblSigmay);
+                Navigation.GetPointsSTD2D(calMPointsGNSS, out gnssSigmax, out gnssSigmay);
+
+                double dst_usbl = 0, dst_gnss = 0;
+                double fwd_az_rad_usbl = 0, fwd_az_rad_gnss = 0;
+                double rev_az_rad_usbl = 0, rev_az_rad_gnss = 0;
+                int its = 0;
+
+                Algorithms.VincentyInverse(Algorithms.Deg2Rad(Latitude.Value), Algorithms.Deg2Rad(Longitude.Value),
+                    Algorithms.Deg2Rad(calPointsUSBLCentroid.Latitude), Algorithms.Deg2Rad(calPointsUSBLCentroid.Longitude),
+                    Algorithms.WGS84Ellipsoid, Algorithms.VNC_DEF_EPSILON, Algorithms.VNC_DEF_IT_LIMIT,
+                    out dst_usbl, out fwd_az_rad_usbl, out rev_az_rad_usbl, out its);
+
+                Algorithms.VincentyInverse(Algorithms.Deg2Rad(Latitude.Value), Algorithms.Deg2Rad(Longitude.Value),
+                    Algorithms.Deg2Rad(calPointsGNSSCentroid.Latitude), Algorithms.Deg2Rad(calPointsGNSSCentroid.Longitude),
+                    Algorithms.WGS84Ellipsoid, Algorithms.VNC_DEF_EPSILON, Algorithms.VNC_DEF_IT_LIMIT,
+                    out dst_gnss, out fwd_az_rad_gnss, out rev_az_rad_gnss, out its);
+                
+                AngularCalibrationForceStop();
+                AngularCalibrationResultEventHandler.Rise(this, new AngularCalibrationResultEventArgs(
+                    Algorithms.Rad2Deg(fwd_az_rad_usbl), Algorithms.Rad2Deg(fwd_az_rad_gnss),
+                    calPointsUSBLCentroid, calPointsGNSSCentroid,
+                    Navigation.DRMS(usblSigmax, usblSigmay), Navigation.DRMS(gnssSigmax, gnssSigmay)));
+
+                calPointsGNSS.Clear();
+                calPointsUSBL.Clear();
+            }
         }
 
         #endregion
@@ -859,8 +1007,7 @@ namespace ZLibrary
                 isStationSalinityUpdated = false;
                 zport.Open();
                 ZPortState = PortState.OPEN;
-
-
+                
                 zport.QueryLocalDataGet(LOC_DATA_ID.LOC_DATA_DEVICE_INFO);
             }
             catch (Exception ex)
@@ -875,14 +1022,20 @@ namespace ZLibrary
                 {
                     auxPorts.Open();
                     GNSSPortState = PortState.OPEN;
-                    HDGPortState = PortState.OPEN;
+                    HDGPortState = PortState.OPEN;                    
+
                     isHDTPresent = false;
+
+                    if (isAngularCalPortUsed)
+                        CalPortState = PortState.OPEN;
                 }
                 catch (Exception ex)
                 {
                     LogEventHandler.Rise(this, new LogEventArgs(LogLineType.ERROR, ex));
                     GNSSPortState = PortState.UNAVAILABLE;
                     HDGPortState = PortState.UNAVAILABLE;
+                    if (isAngularCalPortUsed)
+                        CalPortState = PortState.UNAVAILABLE;
                 }
             }
 
@@ -933,13 +1086,19 @@ namespace ZLibrary
 
                 GNSSPortState = PortState.CLOSED;
                 HDGPortState = PortState.CLOSED;
+
+                if (isAngularCalPortUsed)
+                    CalPortState = PortState.CLOSED;
             }
 
             if (isOutPortUsed)
             {
                 try
                 {
+                    outPortPendingClose = true;
+                    Thread.Sleep(outPort.WriteTimeout);
                     outPort.Close();
+                    outPortPendingClose = false;
                     OutPortState = PortState.CLOSED;
                 }
                 catch (Exception ex)
@@ -1017,21 +1176,30 @@ namespace ZLibrary
             responders.Add(address, new ZResponder(address));
         }
 
-        public void AUXSourcesInit(SerialPortSettings[] auxPortsSettings)
+        public void AUXSourcesInit(Dictionary<string, SerialPortSettings> auxPortsSettings, bool isCalPortUsed)
         {
             if (!isAUXPortsUsed)
             {               
-                auxPorts = new SerialPortsPool(auxPortsSettings);
-                portNamesDictionary = new Dictionary<int, string>();
-                foreach (var item in auxPortsSettings)                
-                    portNamesDictionary.Add(item.PortName.GetHashCode(), item.PortName);
-
+                auxPorts = new SerialPortsPool(auxPortsSettings.Values.ToArray());
+                                
+                foreach (var item in auxPortsSettings)
+                {
+                    PortsDictionaryAdd(item.Value.PortName, item.Key);
+                }
+               
                 auxPorts.DataReceived += (o, e) => nmeaListener.ProcessIncoming(e.PortName.GetHashCode(), Encoding.ASCII.GetString(e.Data));
                 auxPorts.ErrorReceived += (o, e) => LogEventHandler.Rise(o, new LogEventArgs(LogLineType.ERROR, string.Format("{0} in {1}", e.PortName, e.EventType.ToString())));
                 auxPorts.LogEventHandler += (o, e) => LogEventHandler.Rise(o, e);
 
                 GNSSPortState = PortState.USED;
                 HDGPortState = PortState.USED;
+
+                if (isCalPortUsed)
+                {
+                    isAngularCalPortUsed = true;
+                    CalPortState = PortState.USED;
+                }
+                
                 isAUXPortsUsed = true;
             }
         }
@@ -1067,15 +1235,94 @@ namespace ZLibrary
             }
         }
 
-
+        /// <summary>
+        /// Should receive strings in the following format:
+        /// time_string: INFO|ERROR: COMX (FUNC) >>|<< -nmea_string-end_of_the_line
+        /// </summary>
+        /// <param name="eString"></param>
         public void EmulationInput(string eString)
         {
-            LogEventHandler.Rise(this, new LogEventArgs(LogLineType.INFO, string.Format("EMU_INPUT: {0}", eString)));
+            // 14:12:43.983: INFO: COM7 (ZMA) >> $PZMAG,-1.9,-5.8*44
+            // 14:12:43.996: INFO: COM8 >> $GPGNS,101245.00,,,,,,9,,,,5.0,0123,S*0D
 
-            if (eString.StartsWith("$PZMA"))
-                zport.DataReceived_Emul(eString);
+            if (eString.Contains(" $")) // if this line contains an NMEA-sentence
+            {
+                int sclIdx = eString.LastIndexOf(": COM");
+                if (sclIdx >= 0)
+                {                    
+                    var dString = eString.Substring(sclIdx + 2); // COMX (FUNC) >>|<< nmea_string<CR><LF>
+                    var dSplits = dString.Split(emu_separator);
+                    if (dSplits.Length == 4)
+                    {
+                        var portName = dSplits[0];
+                        var portFunc = dSplits[1].Trim(funcTrim);
+                        var nString = dSplits[3];
+
+                        LogEventHandler.Rise(this, new LogEventArgs(LogLineType.INFO, string.Format("{0} ({1}) {2} {3}",
+                            portName,
+                            portFunc,
+                            dSplits[2],
+                            nString)));
+
+                        if (portFunc == "ZMA")
+                            zport.DataReceived_Emul(nString);
+                        else
+                        {
+                            if (portHashByFunction.ContainsKey(portFunc))
+                                nmeaListener.ProcessIncoming(portHashByFunction[portFunc], nString);
+                        }
+                    }
+                }
+            }
+        }
+
+
+        public void AngularCalibrationStart(int maxUSBLPoints)
+        {
+            if (isAngularCalPortUsed)
+            {
+                //if (isAutoQuery)
+                {
+                    if (!isAngularCalibration)
+                    {
+                        if ((maxUSBLPoints >= 32) && (maxUSBLPoints <= 512))
+                        {
+                            calPointsGNSS = new List<GeoPoint>();
+                            calPointsUSBL = new List<GeoPoint>();
+                            calMaxUSBLPoints = maxUSBLPoints;
+
+                            isAngularCalibration = true;
+
+                            LogEventHandler.Rise(this, new LogEventArgs(LogLineType.INFO, "Angular calibration has started"));
+                        }
+                        else
+                        {
+                            throw new ArgumentOutOfRangeException("maxUSBLPoints should be greater or equal to 32 and less or equal to 512");
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("Angular calibration is already in the process");
+                    }
+                }
+                //else
+                //{
+                //    throw new InvalidOperationException("Set Autoquery mode first");
+                //}
+            }
             else
-                nmeaListener.ProcessIncoming(0, eString);
+            {
+                throw new InvalidOperationException("Calibration buoy ports is not specified");
+            }
+        }
+
+        public void AngularCalibrationForceStop()
+        {
+            if (isAngularCalibration)
+            {
+                isAngularCalibration = false;
+                AngularCalibrationFinishedEventHandler.Rise(this, new EventArgs());
+            }
         }
 
         #endregion
@@ -1478,16 +1725,45 @@ namespace ZLibrary
 
         private void nmeaListener_HDGReceived(object sender, HDGMessageEventArgs e)
         {
-            if (!isHDTPresent)
+            if (portFunctionsDictionary.ContainsKey(e.SourceID) ||
+                portFunctionsDictionary[e.SourceID].StartsWith("AUX"))
+            {
+                if (!isHDTPresent)
+                {
+                    if (e.IsValid)
+                    {
+                        if (IsUseVTGAsHeadingSource)
+                            IsUseVTGAsHeadingSource = false;
+
+                        Azimuth.Value = e.MagneticHeading;
+                        StationUpdatedEventHandler.Rise(this, new EventArgs());
+                        HDGPortState = PortState.OK;
+                    }
+                    else
+                    {
+                        HDGPortState = PortState.WAITING;
+                    }
+                }
+            }
+        }
+
+        private void nmeaListener_HDTReceived(object sender, HDTMessageEventArgs e)
+        {
+            if (portFunctionsDictionary.ContainsKey(e.SourceID) &&
+                portFunctionsDictionary[e.SourceID].StartsWith("AUX"))
             {
                 if (e.IsValid)
                 {
+                    if (!isHDTPresent)
+                        isHDTPresent = true;
+
                     if (IsUseVTGAsHeadingSource)
                         IsUseVTGAsHeadingSource = false;
 
-                    Azimuth.Value = e.MagneticHeading;
+                    Azimuth.Value = e.Heading;
                     StationUpdatedEventHandler.Rise(this, new EventArgs());
-                    HDGPortState = PortState.OK;                    
+
+                    HDGPortState = PortState.OK;
                 }
                 else
                 {
@@ -1496,58 +1772,65 @@ namespace ZLibrary
             }
         }
 
-        private void nmeaListener_HDTReceived(object sender, HDTMessageEventArgs e)
-        {
-            if (e.IsValid)
-            {
-                if (!isHDTPresent)
-                    isHDTPresent = true;
-
-                if (IsUseVTGAsHeadingSource)
-                    IsUseVTGAsHeadingSource = false;
-
-                Azimuth.Value = e.Heading;
-                StationUpdatedEventHandler.Rise(this, new EventArgs());
-
-                HDGPortState = PortState.OK;
-            }
-            else
-            {
-                HDGPortState = PortState.WAITING;
-            }
-        }
-
         private void nmeaListener_VTGReceived(object sender, VTGMessageEventArgs e)
         {
-            if (e.IsValid)
+            if (portFunctionsDictionary.ContainsKey(e.SourceID) &&
+                portFunctionsDictionary[e.SourceID].StartsWith("AUX"))
             {
-                SpeedKmh.Value = e.SpeedKmh;
-                VTGTrack.Value = e.TrackTrue;
+                if (e.IsValid)
+                {
+                    SpeedKmh.Value = e.SpeedKmh;
+                    VTGTrack.Value = e.TrackTrue;
 
-                if (IsUseVTGAsHeadingSource)
-                    Azimuth.Value = e.TrackTrue;
+                    if (IsUseVTGAsHeadingSource)
+                        Azimuth.Value = e.TrackTrue;
+                }
             }
         }
 
         private void nmeaListener_RMCReceived(object sender, RMCMessageEventArgs e)
         {
-            if (e.IsValid)
+            if (portFunctionsDictionary.ContainsKey(e.SourceID))
             {
-                Latitude.Value = e.Latitude;
-                Longitude.Value = e.Longitude;
-                GNSSTime.Value = e.TimeFix;
-                GNSSPortState = PortState.OK;
-
-                if (Depth.IsInitializedAndNotObsolete)
+                if (portFunctionsDictionary[e.SourceID].StartsWith("AUX"))
                 {
-                    GeoLocationUpdatedEventHandler.Rise(this,
-                        new GeoLocationUpdateEventArgs("Station", 
-                            DateTime.Now, e.Latitude, e.Longitude, Depth.Value));
+                    if (e.IsValid)
+                    {
+                        Latitude.Value = e.Latitude;
+                        Longitude.Value = e.Longitude;
+                        GNSSTime.Value = e.TimeFix;
+                        GNSSPortState = PortState.OK;
+
+                        if (Depth.IsInitializedAndNotObsolete)
+                        {
+                            GeoLocationUpdatedEventHandler.Rise(this,
+                                new GeoLocationUpdateEventArgs("Station",
+                                    DateTime.Now, e.Latitude, e.Longitude, Depth.Value));
+                        }
+                    }
+                    else
+                    {
+                        GNSSPortState = PortState.WAITING;
+                    }
                 }
-            }
-            else
-            {
-                GNSSPortState = PortState.WAITING;
+                else if (portFunctionsDictionary[e.SourceID].StartsWith("CAL"))
+                {
+                    if (e.IsValid)
+                    {
+                        if (isAngularCalibration)
+                            calPointsGNSS.Add(new GeoPoint(e.Latitude, e.Longitude));
+
+                        GeoLocationUpdatedEventHandler.Rise(this,
+                                new GeoLocationUpdateEventArgs("CalBuoy",
+                                    DateTime.Now, e.Latitude, e.Longitude, Depth.Value));
+
+                        CalPortState = PortState.OK;   
+                    }
+                    else
+                    {
+                        CalPortState = PortState.WAITING;
+                    }
+                }
             }
         }
 
@@ -1563,6 +1846,7 @@ namespace ZLibrary
         public EventHandler GNSSPortStateChangedEventHandler;
         public EventHandler HDGPortStateChangedEventHandler;
         public EventHandler OutPortStateChangedEventHandler;
+        public EventHandler CalPortStateChangedEventHandler;
 
         public EventHandler<LocDataUpdatedEventArgs> LocalDataUpdatedEventHandler;
 
@@ -1576,6 +1860,9 @@ namespace ZLibrary
         public EventHandler On1PPSEventHandler;
 
         public EventHandler<GeoLocationUpdateEventArgs> GeoLocationUpdatedEventHandler;
+
+        public EventHandler AngularCalibrationFinishedEventHandler;
+        public EventHandler<AngularCalibrationResultEventArgs> AngularCalibrationResultEventHandler;
 
         #endregion
 
