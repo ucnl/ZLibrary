@@ -64,7 +64,7 @@ namespace ZLibrary
             }
         }
 
-        double maxSpeedMps = 1;
+        double maxSpeedMps = 0.5;
         public double MaxSpeedMps
         {
             get { return maxSpeedMps; }
@@ -200,7 +200,8 @@ namespace ZLibrary
                     }
 
                     AddPoint(sSideIdx, sNewPoint);
-                    result = false;
+                    
+                    //result = false;
                 }
             }
 

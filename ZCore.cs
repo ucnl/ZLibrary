@@ -623,8 +623,8 @@ namespace ZLibrary
                 if (IsSaveAUXLog) 
                 {
                     string aux_name = portNamesDictionary.ContainsKey(e.SourceID) ? portNamesDictionary[e.SourceID] : string.Format("AUX {0}", e.SourceID.ToString());
-                    string aux_fn = portFunctionsDictionary.ContainsKey(e.SourceID) ? string.Format("({0}", portFunctionsDictionary[e.SourceID]) : string.Empty;
-                    LogEventHandler.Rise(o, new LogEventArgs(LogLineType.INFO, string.Format("{0}{1} >> {2}", aux_name, aux_fn, e.Message))); 
+                    string aux_fn = portFunctionsDictionary.ContainsKey(e.SourceID) ? string.Format("({0})", portFunctionsDictionary[e.SourceID]) : string.Empty;
+                    LogEventHandler.Rise(o, new LogEventArgs(LogLineType.INFO, string.Format("{0} {1} >> {2}", aux_name, aux_fn, e.Message))); 
                 } 
             };
 
@@ -1251,7 +1251,7 @@ namespace ZLibrary
                 if (sclIdx >= 0)
                 {                    
                     var dString = eString.Substring(sclIdx + 2); // COMX (FUNC) >>|<< nmea_string<CR><LF>
-                    var dSplits = dString.Split(emu_separator);
+                    var dSplits = dString.Split(emu_separator, StringSplitOptions.RemoveEmptyEntries);
                     if (dSplits.Length == 4)
                     {
                         var portName = dSplits[0];
