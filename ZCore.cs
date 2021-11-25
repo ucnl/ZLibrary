@@ -286,6 +286,8 @@ namespace ZLibrary
             get { return (IReadOnlyDictionary<ZAddress, ZResponder>)responders; }
         }
 
+        Dictionary<ZAddress, DHFilter> dhFilters;
+
         public AgingValue<double> Latitude { get; private set; }
         public AgingValue<double> Longitude { get; private set; }
         public AgingValue<double> Depth { get; private set; }
@@ -549,8 +551,6 @@ namespace ZLibrary
         double stationDepthAdjust = 0.0;
         bool isStationRemoteQueryExSupported = true;
 
-        DHFilter dhFilter = new DHFilter(8, 1, 2);
-
         #endregion
 
         #region Constructor
@@ -711,7 +711,10 @@ namespace ZLibrary
                         double dhDpt = responders[address].Depth.Value;
                         DateTime dhTS = DateTime.Now;
 
-                        if (dhFilter.Process(dhLat, dhLon, dhDpt, dhTS, out dhLat, out dhLon, out dhDpt, out dhTS))
+                        if (!dhFilters.ContainsKey(address))
+                            dhFilters.Add(address, new DHFilter(8, 1, 2));
+
+                        if (dhFilters[address].Process(dhLat, dhLon, dhDpt, dhTS, out dhLat, out dhLon, out dhDpt, out dhTS))
                         {
                             responders[address].Latitude.Value = dhLat;
                             responders[address].Longitude.Value = dhLon;
@@ -1179,7 +1182,8 @@ namespace ZLibrary
         public void AUXSourcesInit(Dictionary<string, SerialPortSettings> auxPortsSettings, bool isCalPortUsed)
         {
             if (!isAUXPortsUsed)
-            {               
+            {
+                dhFilters = new Dictionary<ZAddress, DHFilter>();
                 auxPorts = new SerialPortsPool(auxPortsSettings.Values.ToArray());
                                 
                 foreach (var item in auxPortsSettings)
