@@ -845,11 +845,11 @@ namespace ZLibrary
 
             string latCardinal, lonCardinal;
 
-            if (bLat > 0) latCardinal = "North";
-            else latCardinal = "South";
+            if (bLat > 0) latCardinal = "N";
+            else latCardinal = "S";
 
-            if (bLon > 0) lonCardinal = "East";
-            else lonCardinal = "West";
+            if (bLon > 0) lonCardinal = "E";
+            else lonCardinal = "W";
 
             StringBuilder emuString = new StringBuilder();
 
@@ -872,13 +872,7 @@ namespace ZLibrary
             #endregion
 
             #region GGA
-
-            if (bLat > 0) latCardinal = "N";
-            else latCardinal = "S";
-
-            if (bLon > 0) lonCardinal = "E";
-            else lonCardinal = "W";
-
+            
             emuString.Append(NMEAParser.BuildSentence(TalkerIdentifiers.GP, SentenceIdentifiers.GGA, new object[]
                             {
                                 DateTime.Now,

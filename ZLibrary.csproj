@@ -34,16 +34,14 @@
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Xml" />
-    <Reference Include="UCNLDrivers, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+    <Reference Include="UCNLDrivers">
       <HintPath>..\..\UCNLDrivers\UCNLDrivers\bin\Release\UCNLDrivers.dll</HintPath>
     </Reference>
     <Reference Include="UCNLNav, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\UCNLNav\UCNLNav\bin\Release\UCNLNav.dll</HintPath>
     </Reference>
-    <Reference Include="UCNLNMEA, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+    <Reference Include="UCNLNMEA">
       <HintPath>..\..\UCNLNMEA\UCNLNMEA\bin\Release\UCNLNMEA.dll</HintPath>
     </Reference>
     <Reference Include="UCNLPhysics, Version=1.0.7376.24686, Culture=neutral, processorArchitecture=MSIL">
